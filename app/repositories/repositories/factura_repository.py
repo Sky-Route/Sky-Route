@@ -96,6 +96,46 @@ class FacturaRepository:
             if close_after:
                 db.close()
 
+    def listar_facturas_pendientes_validacion(self) -> list[dict[str, Any]]:
+        db, close_after = self._session()
+        try:
+            rows = (
+                db.query(FacturaElectronicaModel)
+                .filter_by(estado_validacion="pendiente de validación")
+                .all()
+            )
+            return [self._to_dict(r) for r in rows]
+        finally:
+            if close_after:
+                db.close()
+
+    def reintentar_validacion_factura(self, numero_factura: str) -> dict[str, Any] | None:
+        db, close_after = self._session()
+        try:
+            row = db.query(FacturaElectronicaModel).filter_by(numero_factura=numero_factura).first()
+            if not row:
+                return None
+            impuestos = json.loads(row.impuestos_json)
+            alegra_res = self.alegra.emitir_y_timbrar_factura(
+                numero_factura=row.numero_factura,
+                codigo_pnr=row.codigo_pnr,
+                subtotal=row.subtotal,
+                impuestos=impuestos,
+                total=row.total,
+                moneda=row.moneda,
+            )
+            if alegra_res["estadoValidacion"] == "validada":
+                row.estado_validacion = "validada"
+                row.codigo_unico = alegra_res["codigoUnico"]
+                row.url_pdf = alegra_res["urlPdf"]
+                row.url_xml = alegra_res["urlXml"]
+                db.commit()
+                db.refresh(row)
+            return self._to_dict(row)
+        finally:
+            if close_after:
+                db.close()
+
     @staticmethod
     def _to_dict(row: FacturaElectronicaModel) -> dict[str, Any]:
         return {

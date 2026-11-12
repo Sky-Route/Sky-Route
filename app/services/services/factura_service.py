@@ -76,6 +76,23 @@ class FacturaService:
             "urlXml": factura["urlXml"],
         }
 
+    def reintentar_facturas_pendientes(self) -> dict[str, Any]:
+        pendientes = self.factura_repo.listar_facturas_pendientes_validacion()
+        facturas_resultado: list[dict[str, Any]] = []
+        validadas = 0
+        for fac in pendientes:
+            actualizada = self.factura_repo.reintentar_validacion_factura(fac["numeroFactura"])
+            if actualizada:
+                facturas_resultado.append(actualizada)
+                if actualizada.get("estadoValidacion") == "validada":
+                    validadas += 1
+        return {
+            "procesadas": len(facturas_resultado),
+            "validadas": validadas,
+            "pendientes": len(facturas_resultado) - validadas,
+            "facturas": facturas_resultado,
+        }
+
 
 # Instancia suscrita al bus de eventos para escuchar pago.resultado desde el arranque
 factura_service_listener = FacturaService()

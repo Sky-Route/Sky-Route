@@ -12,6 +12,21 @@ router = APIRouter(
 )
 
 
+@router.post(
+    "/facturas/reintentos",
+    response_model=StandardResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Reintentar validación ante Alegra de las facturas en estado pendiente de validación (HU-010)",
+)
+def reintentar_facturas_pendientes() -> StandardResponse:
+    data = FacturaService().reintentar_facturas_pendientes()
+    return StandardResponse(
+        mensaje="Reintento de facturas procesado",
+        data=data,
+        success=True,
+    )
+
+
 @router.get(
     "/facturas/{codigoPnr}",
     response_model=StandardResponse,
