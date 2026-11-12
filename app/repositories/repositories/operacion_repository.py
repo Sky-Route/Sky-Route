@@ -152,15 +152,28 @@ class OperacionRepository:
         correo_destino: str,
         telefono_destino: str,
     ) -> dict[str, Any]:
+        canal_final = canal
         if canal == "sms":
             envio = self.twilio.enviar_sms(telefono_destino, mensaje)
+            estado_entrega = envio["estadoEntrega"]
         else:
             envio = self.sendgrid.enviar_correo(
                 destinatario=correo_destino,
                 asunto=f"Aviso operativo de tu vuelo {id_vuelo}",
                 contenido=mensaje,
             )
-        estado_entrega = envio["estadoEntrega"]
+            estado_entrega = envio["estadoEntrega"]
+            if estado_entrega != "entregado":
+                if (telefono_destino or "").strip():
+                    envio_sms = self.twilio.enviar_sms(telefono_destino, mensaje)
+                    if envio_sms["estadoEntrega"] == "entregado":
+                        canal_final = "sms"
+                        estado_entrega = "entregado"
+                    else:
+                        estado_entrega = "pendiente de reintento"
+                else:
+                    estado_entrega = "pendiente de reintento"
+
         fecha_envio = datetime.now(TZ_COLOMBIA).isoformat(timespec="seconds")
         id_alr = f"ALR-{secrets.randbelow(90000) + 10000}"
 
@@ -173,7 +186,7 @@ class OperacionRepository:
                 id_vuelo=id_vuelo,
                 tipo_cambio=tipo_cambio,
                 mensaje=mensaje,
-                canal=canal,
+                canal=canal_final,
                 estado_entrega=estado_entrega,
                 fecha_envio=fecha_envio,
             )
