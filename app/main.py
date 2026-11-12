@@ -3,7 +3,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.api.routers import auth, clientes, health, reservas, vuelos
+from app.api.routers import auth, clientes, facturas, health, operaciones, reservas, vuelos
 from app.core.config import settings
 from app.domain.exceptions.domain_exceptions import AppError
 
@@ -59,3 +59,5 @@ app.include_router(auth.router)
 app.include_router(vuelos.router)
 app.include_router(clientes.router)
 app.include_router(reservas.router)
+app.include_router(facturas.router)
+app.include_router(operaciones.router)
