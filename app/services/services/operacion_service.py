@@ -118,8 +118,9 @@ class OperacionService:
                 if not id_pas or self.operacion_repo.alerta_ya_registrada(id_evento, id_pas):
                     continue
                 ficha = self.cliente_repo.obtener_pasajero(id_pas)
-                correo = ficha["correo"] if ficha else "pasajero@correo.com"
-                telefono = ficha["telefono"] if ficha else "+573000000000"
+                correo = (ficha.get("correo") or "").strip() if ficha else ""
+                telefono = (ficha.get("telefono") or "").strip() if ficha else ""
+                canal_preferido = (ficha.get("canalPreferido") or "correo") if ficha else "correo"
                 mensaje, canal = construir_alerta_operativa_rn27(
                     id_vuelo=id_vuelo,
                     origen=vuelo["origen"],
@@ -127,7 +128,7 @@ class OperacionService:
                     estado_nuevo=estado_nuevo,
                     puerta=puerta,
                     hora_estimada_salida=hora_estimada,
-                    canal_preferido="correo",
+                    canal_preferido=canal_preferido,
                 )
                 self.operacion_repo.enviar_y_guardar_alerta(
                     id_evento=id_evento,
@@ -142,13 +143,13 @@ class OperacionService:
 
     def consultar_alertas_pasajero(self, id_pasajero: str) -> dict[str, Any]:
         ficha = self.cliente_repo.obtener_pasajero(id_pasajero)
-        if not ficha:
+        alertas = self.operacion_repo.listar_alertas_pasajero(id_pasajero)
+        if not ficha and not alertas:
             raise AppError(
                 "El pasajero no existe",
                 status_code=404,
                 data={"idPasajero": id_pasajero},
             )
-        alertas = self.operacion_repo.listar_alertas_pasajero(id_pasajero)
         return {
             "idPasajero": id_pasajero,
             "alertas": alertas,

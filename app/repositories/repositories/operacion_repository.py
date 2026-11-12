@@ -152,20 +152,38 @@ class OperacionRepository:
         correo_destino: str,
         telefono_destino: str,
     ) -> dict[str, Any]:
+        correo_limpio = (correo_destino or "").strip()
+        telefono_limpio = (telefono_destino or "").strip()
         canal_final = canal
-        if canal == "sms":
-            envio = self.twilio.enviar_sms(telefono_destino, mensaje)
-            estado_entrega = envio["estadoEntrega"]
+
+        if not correo_limpio and not telefono_limpio:
+            estado_entrega = "sin destino"
+        elif canal == "sms":
+            if telefono_limpio:
+                envio = self.twilio.enviar_sms(telefono_limpio, mensaje)
+                estado_entrega = envio["estadoEntrega"]
+            else:
+                envio = self.sendgrid.enviar_correo(
+                    destinatario=correo_limpio,
+                    asunto=f"Aviso operativo de tu vuelo {id_vuelo}",
+                    contenido=mensaje,
+                )
+                canal_final = "correo"
+                estado_entrega = envio["estadoEntrega"]
         else:
-            envio = self.sendgrid.enviar_correo(
-                destinatario=correo_destino,
-                asunto=f"Aviso operativo de tu vuelo {id_vuelo}",
-                contenido=mensaje,
-            )
-            estado_entrega = envio["estadoEntrega"]
+            if correo_limpio:
+                envio = self.sendgrid.enviar_correo(
+                    destinatario=correo_limpio,
+                    asunto=f"Aviso operativo de tu vuelo {id_vuelo}",
+                    contenido=mensaje,
+                )
+                estado_entrega = envio["estadoEntrega"]
+            else:
+                estado_entrega = "pendiente de reintento"
+
             if estado_entrega != "entregado":
-                if (telefono_destino or "").strip():
-                    envio_sms = self.twilio.enviar_sms(telefono_destino, mensaje)
+                if telefono_limpio:
+                    envio_sms = self.twilio.enviar_sms(telefono_limpio, mensaje)
                     if envio_sms["estadoEntrega"] == "entregado":
                         canal_final = "sms"
                         estado_entrega = "entregado"
