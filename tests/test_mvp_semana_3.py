@@ -8,8 +8,12 @@ from app.core.database import Base, engine
 from app.domain.entities.operacion import verificar_firma_codigo_qr_hu018
 from app.domain.exceptions.domain_exceptions import AppError
 from app.repositories.adapters.alegra_adapter import AlegraSimulatorAdapter
-from app.repositories.adapters.notificaciones_adapter import SendGridSimulatorAdapter
+from app.repositories.adapters.notificaciones_adapter import (
+    SendGridSimulatorAdapter,
+    TwilioSimulatorAdapter,
+)
 from app.repositories.repositories.auth_repository import AuthRepository
+from app.repositories.repositories.cliente_repository import ClienteRepository
 from app.repositories.repositories.factura_repository import FacturaRepository
 from app.repositories.repositories.operacion_repository import OperacionRepository
 from app.repositories.repositories.reserva_repository import ReservaRepository
@@ -31,6 +35,7 @@ def reset_env_semana3(alcance: list[str] | None = None) -> tuple[str, dict[str, 
     Base.metadata.create_all(bind=engine)
     AlegraSimulatorAdapter.entidad_fiscal_disponible = True
     SendGridSimulatorAdapter.disponible = True
+    TwilioSimulatorAdapter.disponible = True
     OperacionService.RELOJ_ACTUAL = datetime(2026, 11, 19, 10, 0, 0, tzinfo=TZ_COLOMBIA)
 
     AuthRepository()
@@ -317,13 +322,14 @@ def test_hu014_hu015_hu016_casos_1_a_4(monkeypatch):
     assert alr_canc.status_code == 200
     assert alr_canc.json()["data"]["alertas"] == []
 
-    # HU-014 Caso 2 y HU-015 Caso 4: cambio de puerta en 'En sala' con proveedor de correo caído
+    # HU-014 Caso 2 y HU-015 Caso 4: cambio de puerta en 'En sala' con ambos proveedores caídos
     client.patch(
         "/api/v1/vuelos/VU-1023/estatus",
         json={"estado": "En sala", "puerta": "B12"},
         headers=headers,
     )
     SendGridSimulatorAdapter.disponible = False
+    TwilioSimulatorAdapter.disponible = False
     up2 = client.patch(
         "/api/v1/vuelos/VU-1023/estatus",
         json={"estado": "En sala", "puerta": "B15"},
@@ -332,6 +338,7 @@ def test_hu014_hu015_hu016_casos_1_a_4(monkeypatch):
     assert up2.status_code == 200
     assert up2.json()["data"]["puerta"] == "B15"
     SendGridSimulatorAdapter.disponible = True
+    TwilioSimulatorAdapter.disponible = True
 
     alr4 = client.get(f"/api/v1/alertas?idPasajero={id_pas}", headers=headers).json()["data"]["alertas"]
     assert alr4[-1]["estadoEntrega"] == "pendiente de reintento"
@@ -453,3 +460,114 @@ def test_hu017_y_hu018_casos_1_a_4():
     pab_404 = client.get(f"/api/v1/pases-abordaje?codigoPnr={pnr}&idPasajero=PAS-9001", headers=headers)
     assert pab_404.status_code == 404
     assert pab_404.json()["mensaje"] == "No se encontró un pase para los datos indicados"
+
+
+# =====================================================================
+# Casos adicionales de corrección HU-010 y HU-015 (Puntos 1, 2 y 3)
+# =====================================================================
+def test_punto1_hu010_alegra_caido_y_reintento_exitoso():
+    """(1) Alegra caído al pagar deja la factura en 'pendiente de validación' y luego el reintento la pasa a 'validada'."""
+    _, headers = reset_env_semana3()
+    AlegraSimulatorAdapter.entidad_fiscal_disponible = False
+    _, pnr = crear_pasajero_y_reserva_base(headers, codigo_pnr="RTR001", pagar=True, con_equipaje=False)
+
+    r_pend = client.get(f"/api/v1/facturas/{pnr}?apellido=Gomez", headers=headers)
+    assert r_pend.status_code == 200
+    assert r_pend.json()["data"]["estadoValidacion"] == "pendiente de validación"
+
+    # Alegra vuelve a estar disponible y se ejecuta POST /api/v1/facturas/reintentos
+    AlegraSimulatorAdapter.entidad_fiscal_disponible = True
+    r_retry = client.post("/api/v1/facturas/reintentos", headers=headers)
+    assert r_retry.status_code == 200
+    datos_retry = r_retry.json()["data"]
+    assert datos_retry["procesadas"] == 1
+    assert datos_retry["validadas"] == 1
+    assert datos_retry["pendientes"] == 0
+
+    r_val = client.get(f"/api/v1/facturas/{pnr}?apellido=Gomez", headers=headers)
+    assert r_val.status_code == 200
+    assert r_val.json()["data"]["estadoValidacion"] == "validada"
+
+
+def test_punto2_hu015_sendgrid_caido_y_respaldo_sms_exitoso():
+    """(2) Si SendGrid falla y Twilio está disponible, la alerta se entrega por respaldo SMS."""
+    _, headers = reset_env_semana3()
+    id_pas, _ = crear_pasajero_y_reserva_base(headers, codigo_pnr="SMS001", pagar=True, con_equipaje=False)
+
+    SendGridSimulatorAdapter.disponible = False
+    TwilioSimulatorAdapter.disponible = True
+
+    up = client.patch(
+        "/api/v1/vuelos/VU-1023/estatus",
+        json={
+            "estado": "Retrasado",
+            "puerta": "B14",
+            "horaEstimadaSalida": "2026-11-20T09:45:00-05:00",
+        },
+        headers=headers,
+    )
+    assert up.status_code == 200
+
+    res_alr = client.get(f"/api/v1/alertas?idPasajero={id_pas}", headers=headers)
+    assert res_alr.status_code == 200
+    alertas = res_alr.json()["data"]["alertas"]
+    assert len(alertas) == 1
+    assert alertas[0]["canal"] == "sms"
+    assert alertas[0]["estadoEntrega"] == "entregado"
+
+
+def test_punto3_hu015_pasajero_sin_contacto_real_queda_sin_destino():
+    """(3) Si el pasajero no tiene correo ni teléfono reales, no se envía nada y la alerta queda en 'sin destino'."""
+    _, headers = reset_env_semana3()
+    # Guardamos un pasajero sin correo ni teléfono reales en la tabla pasajeros
+    pas_sin_contacto = ClienteRepository().guardar_pasajero(
+        nombres="Andrés",
+        apellidos="Sin Contacto",
+        tipo_documento="CC",
+        numero_documento="1099001122",
+        fecha_nacimiento="1990-01-15",
+        correo="",
+        telefono="",
+        id_consentimiento="CON-7781",
+        tipo_pasajero="adulto",
+        id_pasajero_fijo="PAS-SINDEST",
+    )
+    blq = client.post(
+        "/api/v1/asientos/bloqueos",
+        json={"idVuelo": "VU-1023", "numeroAsiento": "20A", "idSesionCompra": "SES-SINDEST"},
+        headers=headers,
+    ).json()["data"]["idBloqueo"]
+
+    ReservaService().crear_reserva(
+        id_vuelo="VU-1023",
+        pasajeros_input=[{"idPasajero": pas_sin_contacto["idPasajero"], "idBloqueo": blq}],
+        codigo_pnr_fijo="SND001",
+    )
+    client.post(
+        "/api/v1/cobros",
+        json={
+            "codigoPnr": "SND001",
+            "monto": 289000,
+            "moneda": "COP",
+            "tokenMedioPago": "tok_4f9a21c7",
+            "concepto": "reserva",
+        },
+        headers={**headers, "Idempotency-Key": "idem-SND001"},
+    )
+
+    up = client.patch(
+        "/api/v1/vuelos/VU-1023/estatus",
+        json={
+            "estado": "Retrasado",
+            "puerta": "B18",
+            "horaEstimadaSalida": "2026-11-20T10:00:00-05:00",
+        },
+        headers=headers,
+    )
+    assert up.status_code == 200
+
+    res_alr = client.get(f"/api/v1/alertas?idPasajero={pas_sin_contacto['idPasajero']}", headers=headers)
+    assert res_alr.status_code == 200
+    alertas = res_alr.json()["data"]["alertas"]
+    assert len(alertas) == 1
+    assert alertas[0]["estadoEntrega"] == "sin destino"
