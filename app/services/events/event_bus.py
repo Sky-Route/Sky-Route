@@ -12,7 +12,9 @@ class EventBus:
         self.published_events: list[dict[str, Any]] = []
 
     def subscribe(self, topic: str, handler: Callable[[dict[str, Any]], None]) -> None:
-        if handler not in self._subscribers[topic]:
+        handler_name = getattr(handler, "__qualname__", str(handler))
+        existing_names = {getattr(h, "__qualname__", str(h)) for h in self._subscribers[topic]}
+        if handler_name not in existing_names:
             self._subscribers[topic].append(handler)
 
     def publish(self, topic: str, payload: dict[str, Any]) -> dict[str, Any]:
