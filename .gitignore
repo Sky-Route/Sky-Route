@@ -1,0 +1,12 @@
+# Entorno virtual y variables locales
+venv/
+.venv/
+.env
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Base de datos local
+*.db

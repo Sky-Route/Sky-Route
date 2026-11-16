@@ -1,0 +1,8 @@
+# Úsalo SOLO si tu Python es 3.13 o más nuevo y no puedes instalar Python 3.12.
+# Mismas librerías de la guía, sin fijar versión exacta (pip toma las compatibles).
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+sqlalchemy>=2.0.30
+pydantic>=2.7.1
+python-dotenv>=1.0.1
+alembic>=1.13.1
