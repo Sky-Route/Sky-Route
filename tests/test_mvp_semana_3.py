@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.core.database import Base, engine
 from app.domain.entities.operacion import verificar_firma_codigo_qr_hu018
 from app.domain.exceptions.domain_exceptions import AppError
@@ -31,6 +32,7 @@ client = TestClient(app)
 
 def reset_env_semana3(alcance: list[str] | None = None) -> tuple[str, dict[str, str]]:
     """Reinicia las tablas SQLite, suscribe los listeners de eventos y emite un token JWT."""
+    settings.FECHA_REFERENCIA = "2026-11-10"
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     AlegraSimulatorAdapter.entidad_fiscal_disponible = True

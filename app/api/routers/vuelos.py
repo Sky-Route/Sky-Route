@@ -13,11 +13,24 @@ router = APIRouter(
 )
 
 
+def _error(descripcion: str, mensaje: str) -> dict:
+    """Documenta en Swagger una respuesta de error con el formato estándar."""
+    return {
+        "model": StandardResponse,
+        "description": descripcion,
+        "content": {"application/json": {"example": {"mensaje": mensaje, "data": None, "success": False}}},
+    }
+
+
 @router.get(
     "/itinerarios",
     response_model=StandardResponse,
     status_code=status.HTTP_200_OK,
     summary="Buscar vuelos disponibles con tarifa vigente y cupos (HU-002 · RN-04, RN-05)",
+    responses={
+        400: _error("Datos de búsqueda no válidos", "Formato de fecha no válido o fecha anterior a hoy. Debe ser YYYY-MM-DD"),
+        503: _error("Base de datos no disponible", "No fue posible consultar los itinerarios"),
+    },
 )
 def consultar_itinerarios(
     origen: str = Query(..., examples=["BOG"]),
