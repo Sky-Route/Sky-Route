@@ -2,6 +2,7 @@
 from datetime import date, datetime
 from typing import Any
 
+from app.core.config import settings
 from app.domain.entities.vuelo import (
     calcular_vencimiento_bloqueo_rn01,
     filtrar_vuelos_rn04_rn05,
@@ -24,6 +25,10 @@ class VueloService:
         cupos: int,
         fecha_hoy: date | None = None,
     ) -> tuple[str, list[dict[str, Any]]]:
+        if fecha_hoy is None:
+            ref = (settings.FECHA_REFERENCIA or "").strip()
+            fecha_hoy = date.fromisoformat(ref) if ref else date.today()
+
         orig, dest, f_desde, f_hasta = validar_parametros_busqueda_itinerarios(
             origen=origen,
             destino=destino,

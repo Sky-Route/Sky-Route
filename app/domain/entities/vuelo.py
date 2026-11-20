@@ -35,7 +35,7 @@ def validar_parametros_busqueda_itinerarios(
     if cupos < 1:
         raise AppError("El número de cupos debe ser mayor o igual a 1", status_code=400, data={"campo": "cupos"})
 
-    hoy = fecha_hoy or date(2026, 11, 10)
+    hoy = fecha_hoy or date.today()
     try:
         f_desde = date.fromisoformat(fecha_desde)
     except Exception as exc:

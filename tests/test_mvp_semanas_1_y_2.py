@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.core.database import Base, engine
 from app.repositories.repositories.auth_repository import AuthRepository
 from app.repositories.repositories.reserva_repository import ReservaRepository
@@ -19,6 +20,7 @@ client = TestClient(app)
 
 def reset_db_and_get_token(alcance: list[str] | None = None) -> tuple[str, dict[str, str]]:
     """Reinicia la base de datos SQLite y devuelve un token JWT válido con su encabezado Authorization."""
+    settings.FECHA_REFERENCIA = "2026-11-10"
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     AuthRepository()
